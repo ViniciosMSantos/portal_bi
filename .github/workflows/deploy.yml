@@ -19,4 +19,4 @@ jobs:
         env:
           DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
-        run: databricks apps deploy portal-dashs --source-code-path .
+        run: databricks bundle deploy --target prod
