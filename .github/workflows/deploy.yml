@@ -15,14 +15,18 @@ jobs:
       - name: Instalar Databricks CLI
         uses: databricks/setup-cli@main
 
-      - name: Importar app existente no estado do Terraform
+      - name: Upload arquivos para o workspace
         env:
           DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
-        run: databricks bundle terraform -- import databricks_app.portal_dashs portal-dashs 2>/dev/null || true
-
-      - name: Deploy
-        env:
-          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
-          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+        continue-on-error: true
         run: databricks bundle deploy --target prod
+
+      - name: Atualizar app existente
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+        run: |
+          USER=$(databricks current-user me | python3 -c "import sys,json; print(json.load(sys.stdin)['userName'])")
+          databricks apps deploy portal-dashs \
+            --source-code-path "/Workspace/Users/${USER}/.bundle/portal_dash/prod/files"
