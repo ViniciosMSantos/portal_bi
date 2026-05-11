@@ -1,0 +1,13 @@
+bundle:
+  name: portal_dash
+
+targets:
+  prod:
+    default: true
+
+resources:
+  apps:
+    portal_dashs:
+      name: "portal-dashs"
+      description: "Portal de Dashboards"
+      source_code_path: .
