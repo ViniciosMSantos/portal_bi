@@ -15,6 +15,12 @@ jobs:
       - name: Instalar Databricks CLI
         uses: databricks/setup-cli@main
 
+      - name: Importar app existente no estado do Terraform
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+        run: databricks bundle terraform -- import databricks_app.portal_dashs portal-dashs 2>/dev/null || true
+
       - name: Deploy
         env:
           DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
