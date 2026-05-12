@@ -1,12 +1,101 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
-    <title>Document</title>
-</head>
-<body>
-    <div class="meu-texto">Olá esse é o dash portal dos portais teste</div>
-</body>
-</html>
+{% extends "base.html" %}
+
+{% block content %}
+<div id="folder-content">
+    <h1 id="folder-content-title">Início</h1>
+    <div id="folder-content-area"></div>
+</div>
+
+{% if current_user.is_admin %}
+<div id="fab-group">
+    <button id="fab-create-dashboard" onclick="openDashboardModal()">
+        <img class="fab-icon" src="{{ url_for('static', filename='icons/icons8-soma-50.png') }}" alt="" />
+        Novo Dashboard
+    </button>
+    <button id="fab-create-folder" onclick="openFolderModal()">
+        <img class="fab-icon" src="{{ url_for('static', filename='icons/icons8-soma-50.png') }}" alt="" />
+        Nova Pasta
+    </button>
+</div>
+
+<div id="dashboard-modal-overlay" onclick="closeDashboardModal()"></div>
+
+<div id="dashboard-modal">
+    <div id="dashboard-modal-header">
+        <h2 id="dashboard-modal-title">Novo Dashboard</h2>
+        <button id="dashboard-modal-close" onclick="closeDashboardModal()">&#x2715;</button>
+    </div>
+
+    <div id="dashboard-modal-error"></div>
+
+    <form id="dashboard-form" onsubmit="submitDashboard(event)">
+        <div id="dashboard-field-title" class="folder-field">
+            <label for="dashboard-input-title">Título</label>
+            <input id="dashboard-input-title" type="text" name="title" placeholder="Ex: Vendas Mensais" required />
+        </div>
+        <div id="dashboard-field-url" class="folder-field">
+            <label for="dashboard-input-url">URL</label>
+            <input id="dashboard-input-url" type="url" name="url" placeholder="https://..." required />
+        </div>
+        <div id="dashboard-field-type" class="folder-field">
+            <label for="dashboard-input-type">Tipo</label>
+            <select id="dashboard-input-type" name="link_type">
+                <option value="DASHBOARD">Dashboard</option>
+                <option value="GITHUB">GitHub</option>
+                <option value="N8N">N8N</option>
+                <option value="OTHER">Outro</option>
+            </select>
+        </div>
+        <div id="dashboard-field-folder" class="folder-field">
+            <label for="dashboard-input-folder">Pasta</label>
+            <select id="dashboard-input-folder" name="folder_id" required>
+                <option value="">Selecione uma pasta...</option>
+            </select>
+        </div>
+        <div id="dashboard-field-desc" class="folder-field">
+            <label for="dashboard-input-desc">Descrição <span id="dashboard-label-optional">(opcional)</span></label>
+            <input id="dashboard-input-desc" type="text" name="description" placeholder="Descrição do dashboard" />
+        </div>
+        <div id="dashboard-modal-actions">
+            <button id="dashboard-btn-cancel" type="button" onclick="closeDashboardModal()">Cancelar</button>
+            <button id="dashboard-btn-submit" type="submit">Criar dashboard</button>
+        </div>
+    </form>
+</div>
+
+<div id="folder-modal-overlay" onclick="closeFolderModal()"></div>
+
+<div id="folder-modal">
+    <div id="folder-modal-header">
+        <h2 id="folder-modal-title">Nova pasta</h2>
+        <button id="folder-modal-close" onclick="closeFolderModal()">&#x2715;</button>
+    </div>
+
+    <div id="folder-modal-error"></div>
+
+    <form id="folder-form" onsubmit="submitFolder(event)">
+        <div id="folder-field-name" class="folder-field">
+            <label for="folder-input-name">Nome</label>
+            <input id="folder-input-name" type="text" name="name" placeholder="Ex: Financeiro" required />
+        </div>
+        <div id="folder-field-parent" class="folder-field">
+            <label for="folder-input-parent">Pasta pai <span id="folder-label-optional">(opcional)</span></label>
+            <select id="folder-input-parent" name="parent_id">
+                <option value="">Nenhuma (pasta raiz)</option>
+            </select>
+        </div>
+        <div id="folder-field-desc" class="folder-field">
+            <label for="folder-input-desc">Descrição <span id="folder-label-optional">(opcional)</span></label>
+            <input id="folder-input-desc" type="text" name="description" placeholder="Descrição da pasta" />
+        </div>
+        <div id="folder-modal-actions">
+            <button id="folder-btn-cancel" type="button" onclick="closeFolderModal()">Cancelar</button>
+            <button id="folder-btn-submit" type="submit">Criar pasta</button>
+        </div>
+    </form>
+</div>
+
+<script src="{{ url_for('static', filename='js/dashboards.js') }}"></script>
+<script src="{{ url_for('static', filename='js/folders.js') }}"></script>
+{% endif %}
+{% endblock %}

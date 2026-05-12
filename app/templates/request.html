@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Solicitar Acesso — BHub</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/request.css') }}">
+</head>
+<body>
+
+<div id="request-page">
+
+    <div id="request-card">
+
+        <div id="request-header">
+            <img id="request-logo" src="{{ url_for('static', filename='img/Logo Branco BHub [10.25].png') }}" alt="BHub" />
+            <h1 id="request-title">Solicitar acesso</h1>
+            <p id="request-subtitle">Preencha os dados abaixo para solicitar acesso ao Portal de Dashboards.</p>
+        </div>
+
+        {% if error %}
+        <div id="request-error">{{ error }}</div>
+        {% endif %}
+
+        <form id="request-form" method="POST" action="/solicitar-acesso">
+
+            <div id="field-name" class="field">
+                <label for="input-name">Seu nome</label>
+                <input id="input-name" type="text" name="name" placeholder="Ex: João Silva" required />
+            </div>
+
+            <div id="field-message" class="field">
+                <label for="input-message">Motivo do acesso <span id="label-optional">(opcional)</span></label>
+                <textarea id="input-message" name="message" rows="3" placeholder="Descreva brevemente para que você usará o portal..."></textarea>
+            </div>
+
+            <div id="request-user-info">
+                Solicitando como <strong>{{ current_user.email }}</strong>
+            </div>
+
+            <button id="request-btn" type="submit">Enviar solicitação</button>
+
+        </form>
+
+    </div>
+
+</div>
+
+</body>
+</html>

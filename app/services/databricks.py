@@ -253,10 +253,10 @@ def ensure_user(email, display_name=""):
             with conn.cursor() as cur:
                 cur.execute(
                     sql.SQL(
-                        "INSERT INTO {}.users (email, name, role, is_active) VALUES (%s, %s, 'USER', FALSE)"
+                        "INSERT INTO {}.users (id, email, name, role, is_active) VALUES (%s, %s, %s, 'USER', FALSE)"
                         " ON CONFLICT DO NOTHING"
                     ).format(sql.Identifier(s)),
-                    (email, name),
+                    (gen_id("usr_"), email, name),
                 )
                 conn.commit()
         return get_user(email)

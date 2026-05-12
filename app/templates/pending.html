@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aguardando Aprovação — BHub</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/request.css') }}">
+</head>
+<body>
+
+<div id="request-page">
+
+    <div id="request-card">
+
+        <div id="request-header">
+            <img id="request-logo" src="{{ url_for('static', filename='img/Logo Branco BHub [10.25].png') }}" alt="BHub" />
+            <div id="pending-title-row">
+                <img id="pending-icon" src="{{ url_for('static', filename='icons/icons8-ampulheta-50.png') }}" alt="Aguardando" />
+                <h1 id="request-title">Solicitação enviada</h1>
+            </div>
+            <p id="request-subtitle">Sua solicitação de acesso está sendo analisada. Você receberá uma notificação assim que for aprovada.</p>
+        </div>
+
+        <div id="pending-info">
+            <div id="pending-email-row">
+                <span id="pending-label">Usuário</span>
+                <div id="pending-user-info">
+                    <span id="pending-email">{{ current_user.email }}</span>
+                </div>
+            </div>
+            <div id="pending-status-row">
+                <span id="pending-label">Status</span>
+                <span id="pending-badge">Aguardando aprovação</span>
+            </div>
+        </div>
+
+        <p id="pending-hint">Se precisar de acesso urgente, entre em contato com o time de dados.</p>
+
+    </div>
+
+</div>
+
+</body>
+</html>
