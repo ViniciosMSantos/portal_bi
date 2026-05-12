@@ -14,6 +14,12 @@ Este arquivo contém as especificações técnicas e regras de negócio do proje
 
 Nunca editar arquivos sem antes apresentar o plano. Nunca ampliar o escopo além do que foi acordado no plano.
 
+## Padrões de HTML/CSS
+
+- **Sempre usar `id` nos elementos HTML** — facilita identificação e estilização no CSS
+- No CSS, estilizar sempre por `#id`, nunca por classe quando o elemento já tem id
+- Nomenclatura de ids: `kebab-case` descritivo (ex: `sidebar-logo`, `nav-home`, `content`)
+
 ## Visão Geral
 
 Portal corporativo de dashboards com controle de acesso por tags e painel administrativo para gerentes. Roda como **Databricks App** com backend Flask, banco de dados **Lakebase** (PostgreSQL gerenciado pelo Databricks) e frontend HTML + CSS + JS vanilla servido pelo Jinja2.
@@ -37,15 +43,27 @@ Portal corporativo de dashboards com controle de acesso por tags e painel admini
 
 ```
 ├── app/
-│   ├── __init__.py              # Factory: create_app(), registra blueprints
-│   ├── routes.py                # Blueprint "main" — rotas Flask
+│   ├── __init__.py              # Factory: create_app(), context_processor com current_user
+│   ├── routes.py                # Blueprint "main" — todas as rotas Flask
 │   ├── services/
 │   │   └── databricks.py        # Camada de dados: pool OAuth + todo o CRUD
 │   ├── static/
-│   │   └── css/
-│   │       └── styles.css       # Design system BHub
+│   │   ├── css/
+│   │   │   ├── styles.css       # Design system BHub (sidebar, cards, modais, config panel)
+│   │   │   └── request.css      # Estilos das páginas de solicitação/pendente
+│   │   ├── icons/               # Ícones PNG (pasta, casa, soma, ampulheta)
+│   │   ├── img/                 # Logos BHub (branco e preto, com e sem fundo)
+│   │   └── js/
+│   │       ├── sidebar.js       # Árvore de pastas, goHome(), goConfig(), loadFolderContent()
+│   │       ├── folders.js       # Modal Nova Pasta: openFolderModal(), submitFolder()
+│   │       ├── dashboards.js    # Modal Novo Dashboard: openDashboardModal(), submitDashboard()
+│   │       └── config.js        # Painel de configuração: loadConfigPanel(), tabbed nav
 │   └── templates/
-│       └── index.html           # SPA principal (HTML + CSS + JS em um arquivo)
+│       ├── base.html            # Layout base: sidebar, nav, user info (Jinja2 extends)
+│       ├── index.html           # Página principal (SPA): FABs + modais (só ADMIN/MANAGER)
+│       ├── dashboard.html       # Placeholder do painel de configuração (rota /dashboard)
+│       ├── request.html         # Formulário de solicitação de acesso
+│       └── pending.html         # Página de aguardando aprovação
 ├── run.py                       # Entry point dev: from app import create_app
 ├── app.yml                      # Databricks Apps: gunicorn run:app
 └── CLAUDE.md                    # Este arquivo
@@ -136,65 +154,52 @@ settings:            key PK | value
 
 ## Arquitetura do Frontend
 
-O `index.html` é um **SPA** servido pelo Flask. A comunicação com o backend é via **fetch/AJAX** (JSON), sem recarregar a página.
+O portal é uma **SPA** baseada em `base.html` (layout) + `index.html` (conteúdo). A navegação entre Início, pastas e Painel de Configuração é feita via JS sem reload de página. A comunicação com o backend é via **fetch/AJAX** (JSON).
 
-### Seções do `<script>` (comentários `// SECTION`)
+### Arquivos JS e responsabilidades
 
-| Seção | Responsabilidade |
+| Arquivo | Responsabilidade |
 |---|---|
-| A — Constantes | Configurações globais, referências de elementos DOM |
-| B — Utilitários | `genId()`, `escHtml()`, `formatDate()`, `api(method, url, body)` |
-| C — StateManager | Estado global em memória (`state`). Carrega dados iniciais via `fetch('/api/init')` |
-| D — DataModel | Espelho em memória dos dados. Filtros de permissão já aplicados pelo servidor |
-| E — AuthManager | Role do usuário vem de `state.user.role`. `MANAGER`/`ADMIN` → adiciona `manager-active` ao `<body>` |
-| F — Router | `navigateTo(page, params)` — fonte única de verdade para view ativa |
-| G — SidebarRenderer | Sidebar 260px com árvore de pastas e navegação |
-| H — ContentRenderer | Grid de cards no `#content-area`, re-renderiza a cada navegação |
-| I — BreadcrumbRenderer | Breadcrumb a partir do caminho de ancestrais |
-| J — AdminUI | Modais admin: CRUD tags, dashboards, pastas, usuários, solicitações |
-| K — NotificationUI | Badge + dropdown de notificações |
-| L — Wiring de eventos | Listeners únicos no init, delegação via `data-action` + `data-id` |
-| M — BackendCalls | Wrappers de `fetch` com loading state e error handling padronizados |
-| N — AppInit | `DOMContentLoaded` → `fetch('/api/init')` → render |
+| `sidebar.js` | Árvore de pastas (build/render/expand), `goHome()`, `goConfig()`, `loadFolderContent()`, `reloadFolders()` |
+| `folders.js` | Modal Nova Pasta: `openFolderModal()`, `closeFolderModal()`, `submitFolder()` |
+| `dashboards.js` | Modal Novo Dashboard: `openDashboardModal()`, `closeDashboardModal()`, `submitDashboard()` |
+| `config.js` | Painel admin: `loadConfigPanel()`, `switchConfigTab()`, `approveRequest()`, `rejectRequest()`, `toggleUserActive()`, `changeUserRole()` |
 
-### Padrão de chamada ao backend
+### Navegação SPA
+
+- `goHome(e)` — previne reload, limpa seleção de pastas, restaura estado "Início"
+- `goConfig(e)` — previne reload, chama `loadConfigPanel()` que busca dados via fetch
+- `loadFolderContent(folderId, folderName)` — renderiza subpastas + dashboards da pasta selecionada
+- Ambos verificam se `#folder-content` existe antes de `e.preventDefault()` — se não existir (página diferente), permite navegação normal
+
+### Variáveis globais em sidebar.js
 
 ```javascript
-// Sempre usar o wrapper api() de BackendCalls:
-async function api(method, url, body = null) {
-    const res = await fetch(url, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: body ? JSON.stringify(body) : null,
-    });
-    const data = await res.json();
-    if (!data.ok) throw new Error(data.error || "Erro desconhecido");
-    return data;
-}
+var _allDashboards = [];      // cache de todos os dashboards
+var _allFoldersMap = {};      // mapa id → folder para navegação de breadcrumb
+var _selectedFolderId = null; // pasta ativa no momento
+```
 
-// Uso com loading + error:
-async function adminCreateDashboard(payload) {
-    setLoading(true);
-    try {
-        const { data } = await api("POST", "/api/dashboards", payload);
-        state.dashboards.push(data);
-        ContentRenderer.renderContent();
-    } catch (e) {
-        showError(e.message);
-    } finally {
-        setLoading(false);
-    }
-}
+### Padrão de chamada ao backend (nos arquivos JS)
+
+```javascript
+var res = await fetch("/api/endpoint", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+});
+var data = await res.json();
+if (!data.ok) throw new Error(data.error || "Erro desconhecido");
 ```
 
 ### Padrões Importantes
 
-- **Re-render após mutação:** após qualquer `await api(...)` bem-sucedido, chamar `SidebarRenderer.renderTree()` e/ou `ContentRenderer.renderContent()`
-- **Delegação de eventos:** elementos interativos usam `data-action` e `data-id`; handlers fazem `e.target.closest('[data-action="..."]')`
-- **Dependências JS:** apenas Bootstrap 5.3.3 (jsDelivr) e Google Fonts — sem React, sem bundler
+- **Re-render após mutação:** após criar pasta ou dashboard, chamar `reloadFolders()`; após ação no painel de config, chamar `loadConfigPanel()`
+- **URLs Jinja2 no JS:** usar `window._varName = "{{ url_for(...) }}"` no template e referenciar `window._varName` nos arquivos `.js`
+- **Dependências JS:** apenas Google Fonts (Inter) — sem React, sem bundler, sem Bootstrap
 - **Permissões no backend:** NUNCA confiar no frontend para filtrar — o servidor é a fonte de verdade
-- **`private_notes`:** NUNCA retornar para `USER`/`BA` nas rotas Flask
-- **Audit trail:** toda operação admin chama `log_audit()` antes de retornar
+- **Permissões no frontend:** usar `{% if current_user.is_admin %}` no Jinja2 para esconder elementos admin (FABs, Painel de Configuração)
+- **`_escHtml(str)`:** sempre sanitizar strings do banco antes de inserir no `innerHTML`
 
 ## Lógica de Permissões (aplicada nas rotas Flask)
 
@@ -213,33 +218,36 @@ ADMIN / MANAGER     = acesso total
 | MANAGER | Tudo + painel admin completo |
 | ADMIN | Tudo + painel admin completo |
 
-## Rotas Flask (convenção)
+## Rotas Flask implementadas
 
 | Método | Rota | Descrição |
 |---|---|---|
-| GET | `/` | Serve o `index.html` com dados iniciais inline |
-| GET | `/api/init` | Retorna dados iniciais para o SPA (user, dashboards, folders, tags, notificações) |
-| GET | `/api/dashboards` | Lista dashboards (filtrados por permissão) |
-| POST | `/api/dashboards` | Cria dashboard (MANAGER/ADMIN) |
-| PUT | `/api/dashboards/<id>` | Atualiza dashboard (MANAGER/ADMIN) |
-| DELETE | `/api/dashboards/<id>` | Remove dashboard (MANAGER/ADMIN) |
-| GET | `/api/tags` | Lista tags |
-| POST | `/api/tags` | Cria tag |
-| PUT | `/api/tags/<id>` | Atualiza tag |
-| DELETE | `/api/tags/<id>` | Remove tag |
-| GET | `/api/folders` | Lista pastas visíveis |
+| GET | `/` | Página principal (index.html) |
+| GET | `/dashboard` | Painel de configuração (dashboard.html) |
+| GET | `/solicitar-acesso` | Formulário de solicitação de acesso |
+| POST | `/solicitar-acesso` | Envia solicitação |
+| GET | `/aguardando` | Página de aguardando aprovação |
+| GET | `/api/folders` | Lista pastas + dashboards |
 | POST | `/api/folders` | Cria pasta |
+| POST | `/api/dashboards` | Cria dashboard |
+| GET | `/api/users` | Lista todos os usuários |
+| PUT | `/api/users/<email>` | Atualiza usuário (role, is_active, name, tags) |
+| GET | `/api/requests` | Lista solicitações pendentes |
+| POST | `/api/requests/<id>/approve` | Aprova solicitação (ativa usuário) |
+| POST | `/api/requests/<id>/reject` | Rejeita solicitação |
+
+### Rotas planejadas (ainda não implementadas)
+
+| Método | Rota | Descrição |
+|---|---|---|
 | PUT | `/api/folders/<id>` | Atualiza pasta |
 | DELETE | `/api/folders/<id>` | Remove pasta |
-| GET | `/api/users` | Lista usuários (MANAGER/ADMIN) |
-| PUT | `/api/users/<email>` | Atualiza usuário |
-| GET | `/api/requests` | Lista solicitações de acesso |
-| POST | `/api/requests` | Cria solicitação de acesso |
-| POST | `/api/requests/<id>/approve` | Aprova solicitação |
-| POST | `/api/requests/<id>/reject` | Rejeita solicitação |
-| GET | `/api/notifications` | Lista notificações do usuário |
-| POST | `/api/notifications/<id>/read` | Marca notificação como lida |
+| PUT | `/api/dashboards/<id>` | Atualiza dashboard |
+| DELETE | `/api/dashboards/<id>` | Remove dashboard |
+| GET | `/api/tags` | Lista tags |
+| POST/PUT/DELETE | `/api/tags/<id>` | CRUD de tags |
 | POST | `/api/favorites/<dash_id>` | Toggle favorito |
+| GET | `/api/notifications` | Lista notificações |
 | GET | `/api/audit` | Audit log (ADMIN) |
 
 ## Design System BHub
@@ -266,13 +274,12 @@ ADMIN / MANAGER     = acesso total
 
 ### Tipografia
 
-- Headings: **Plus Jakarta Sans** (weight 600–700)
-- Body: **DM Sans** (weight 400–500)
-- Escala: Display 32px | H1 24px | H2 20px | H3 16px | Body 14px | Small 12px
+- Fonte única: **Inter** (Google Fonts) — weights 400, 500, 600, 700
+- Escala: H1 24px | H2 20px | H3 16px | Body 14px | Small 12px | Label 11px
 
 ### Componentes
 
-- **Sidebar:** 260px fixa, fundo `--dark`, item ativo com borda esquerda 3px `--accent`
+- **Sidebar:** 260px fixa, fundo `#111827`, item ativo com borda esquerda 3px `#fff`
 - **Cards:** `border-radius: 12px`, `box-shadow: 0 2px 8px rgba(0,0,0,0.06)`, hover eleva 2px
 - **Botões:** `border-radius: 8px`, primary fundo `--primary`
 - **Modais:** overlay `rgba(13,13,43,0.5)` com `backdrop-blur`, card `max-width: 540px`, `border-radius: 16px`
