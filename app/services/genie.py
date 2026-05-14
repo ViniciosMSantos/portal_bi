@@ -1,13 +1,14 @@
 import os
 import time
 import requests
+from databricks import sdk as _sdk
 
 _HOST = None
-_SPACE_ID = None
+_WC = None
 
 
 def _host():
-    # Retorna a URL base do workspace Databricks (singleton, normalizado com https://).
+    # Returns the Databricks workspace base URL (singleton, normalized with https://).
     global _HOST
     if _HOST is None:
         _HOST = os.getenv("DATABRICKS_HOST", "").rstrip("/")
@@ -17,38 +18,44 @@ def _host():
 
 
 def _space_id():
-    # Retorna o ID do Genie Space configurado via GENIE_ESPACE_ID (singleton).
-    global _SPACE_ID
-    if _SPACE_ID is None:
-        _SPACE_ID = os.getenv("GENIE_ESPACE_ID", "")
-    return _SPACE_ID
+    # Tries env vars in priority order:
+    # 1. GENIE_SPACE_SPACE_ID  — injected by Databricks Apps when the resource key is "genie-space"
+    # 2. GENIE_ESPACE_ID       — set manually (local dev or App Environment tab)
+    sid = (
+        os.getenv("GENIE_SPACE_SPACE_ID", "").strip()
+        or os.getenv("GENIE_ESPACE_ID", "").strip()
+    )
+    if not sid:
+        raise RuntimeError(
+            "Genie Space ID not found. "
+            "In the Databricks App, add the 'genie-space' resource under 'App Resources' "
+            "(this automatically injects GENIE_SPACE_SPACE_ID). "
+            "For local dev, set GENIE_ESPACE_ID in .env."
+        )
+    return sid
 
 
 def _get_token():
-    # Obtém token de autenticação: usa DATABRICKS_TOKEN (PAT) se disponível, caso contrário faz OAuth client_credentials.
-    pat = os.getenv("DATABRICKS_TOKEN")
-    if pat:
-        return pat
-    resp = requests.post(
-        f"{_host()}/oidc/v1/token",
-        data={
-            "grant_type": "client_credentials",
-            "scope": os.getenv("DATABRICKS_OAUTH_SCOPE", "all-apis"),
-        },
-        auth=(os.getenv("DATABRICKS_CLIENT_ID"), os.getenv("DATABRICKS_CLIENT_SECRET")),
-        timeout=15,
-    )
-    resp.raise_for_status()
-    return resp.json()["access_token"]
+    # Uses the Databricks SDK WorkspaceClient — works automatically in Databricks Apps
+    # (metadata-service / databricks-apps auth) and locally without needing CLIENT_SECRET.
+    global _WC
+    if _WC is None:
+        _WC = _sdk.WorkspaceClient()
+    headers = {}
+    _WC.config.authenticate(headers)
+    auth = headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        return auth[7:]
+    raise RuntimeError("Could not obtain token via Databricks SDK")
 
 
 def _headers(token):
-    # Monta os headers HTTP com Authorization Bearer para chamadas à API Genie.
+    # Builds HTTP headers with Bearer Authorization for Genie API calls.
     return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
 
 def _poll_message(host, space, conv_id, msg_id, headers, timeout=90):
-    # Faz polling até a mensagem ficar COMPLETED ou atingir o timeout. Retorna dados da mensagem e URL base.
+    # Polls until the message is COMPLETED or the timeout is reached. Returns message data and base URL.
     msg_url = f"{host}/api/2.0/genie/spaces/{space}/conversations/{conv_id}/messages/{msg_id}"
     deadline = time.time() + timeout
     msg_data = {}
@@ -68,7 +75,7 @@ def _poll_message(host, space, conv_id, msg_id, headers, timeout=90):
 
 
 def _extract_results(msg_data, msg_url, headers):
-    # Extrai o texto da resposta e, se houver query, busca os dados tabulares via /query-result.
+    # Extracts the response text and, if a query exists, fetches tabular data via /query-result.
     answer_text = ""
     query_description = ""
     has_query = False
@@ -114,7 +121,7 @@ def _extract_results(msg_data, msg_url, headers):
 
 
 def query(message, conversation_id=None, timeout=90):
-    # Ponto de entrada público. Envia mensagem ao Genie, aguarda resposta e retorna answer + dados + conversation_id.
+    # Public entry point. Sends a message to Genie, waits for the response, and returns answer + data + conversation_id.
     token = _get_token()
     host = _host()
     space = _space_id()
