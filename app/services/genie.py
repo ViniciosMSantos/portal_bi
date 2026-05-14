@@ -1,6 +1,7 @@
 import os
 import re
 import time
+import requests as _requests
 from databricks import sdk as _sdk
 
 _WC = None
@@ -53,9 +54,29 @@ def _space_id():
 
 
 def _do(w, method, path, body=None):
-    """Use the SDK's internal HTTP client — handles auth and returns a plain dict."""
-    kwargs = {"body": body} if body else {}
-    return w.api_client.do(method, path, **kwargs)
+    """Call Databricks API with SDK auth. Captures redirect/HTML for clear diagnostics."""
+    host = w.config.host.rstrip("/")
+    url = f"{host}{path}"
+    auth_headers = w.config.authenticate()
+    headers = {**auth_headers, "Content-Type": "application/json"}
+
+    resp = _requests.request(
+        method, url, json=body, headers=headers,
+        timeout=30, allow_redirects=False,
+    )
+
+    if resp.is_redirect:
+        raise RuntimeError(
+            f"Genie API redirect {resp.status_code} → {resp.headers.get('Location', '?')}"
+        )
+    if not resp.ok:
+        raise RuntimeError(f"Genie API HTTP {resp.status_code}: {resp.text[:400]}")
+    if resp.text.strip().startswith("<"):
+        ct = resp.headers.get("Content-Type", "")
+        raise RuntimeError(
+            f"Genie returned HTML (HTTP {resp.status_code}, {ct}): {resp.text[:400]}"
+        )
+    return resp.json()
 
 
 def _extract_results(w, space, conv_id, msg_id, msg_data):
