@@ -102,13 +102,17 @@ def query(message, conversation_id=None, timeout=90):
     if conversation_id:
         msg = w.genie.create_message(space, conversation_id, content=message)
         conv_id = conversation_id
-        msg_id = msg.id
+        # SDK 0.44 may return .id directly or nested in .message.id
+        msg_id = getattr(msg, "id", None) or getattr(getattr(msg, "message", None), "id", None)
     else:
         resp = w.genie.start_conversation(space, content=message)
         conv_id = resp.conversation_id
-        msg_id = resp.message.id
-        if getattr(resp.message, "status", "") == "COMPLETED":
-            result = _extract_results(w, space, conv_id, msg_id, resp.message)
+        # SDK 0.44 returns .message_id flat; older spec had .message.id nested
+        nested = getattr(resp, "message", None)
+        msg_id = getattr(nested, "id", None) or getattr(resp, "message_id", None)
+        initial_status = getattr(nested, "status", "") if nested else ""
+        if initial_status == "COMPLETED":
+            result = _extract_results(w, space, conv_id, msg_id, nested)
             result["conversation_id"] = conv_id
             return result
 
