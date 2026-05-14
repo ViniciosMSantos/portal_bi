@@ -52,38 +52,48 @@ def _space_id():
     return sid
 
 
+def _do(w, method, path, body=None):
+    """Use the SDK's internal HTTP client — handles auth and returns a plain dict."""
+    kwargs = {"body": body} if body else {}
+    return w.api_client.do(method, path, **kwargs)
+
+
 def _extract_results(w, space, conv_id, msg_id, msg_data):
     answer_text = ""
     query_description = ""
     has_query = False
 
-    for att in getattr(msg_data, "attachments", None) or []:
-        if getattr(att, "text", None):
-            answer_text = getattr(att.text, "content", "") or ""
-        if getattr(att, "query", None):
+    for att in msg_data.get("attachments") or []:
+        if "text" in att:
+            answer_text = att["text"].get("content", "")
+        if "query" in att:
             has_query = True
-            query_description = getattr(att.query, "description", "") or ""
+            query_description = att["query"].get("description", "")
 
     columns = []
     rows = []
     if has_query:
         try:
-            qr = w.genie.get_message_query_result(space, conv_id, msg_id)
-            stmt = getattr(qr, "statement_response", None)
-            if stmt:
-                manifest_cols = (
-                    getattr(getattr(getattr(stmt, "manifest", None), "schema", None), "columns", None) or []
-                )
-                data_array = (
-                    getattr(getattr(stmt, "result", None), "data_typed_array", None) or []
-                )
-                columns = [getattr(c, "name", "") for c in manifest_cols]
-                for row in data_array:
-                    values = [
-                        getattr(v, "str", "") or ""
-                        for v in (getattr(row, "values", None) or [])
-                    ]
-                    rows.append(dict(zip(columns, values)))
+            qr = _do(w, "GET",
+                f"/api/2.0/genie/spaces/{space}/conversations/{conv_id}/messages/{msg_id}/query-result")
+            manifest = (
+                qr.get("statement_response", {})
+                .get("manifest", {})
+                .get("schema", {})
+                .get("columns") or []
+            )
+            data_array = (
+                qr.get("statement_response", {})
+                .get("result", {})
+                .get("data_typed_array") or []
+            )
+            columns = [c.get("name", "") for c in manifest]
+            for row in data_array:
+                values = [
+                    v.get("str", "") if isinstance(v, dict) else str(v or "")
+                    for v in (row.get("values") or [])
+                ]
+                rows.append(dict(zip(columns, values)))
         except Exception:
             pass
 
@@ -100,36 +110,36 @@ def query(message, conversation_id=None, timeout=90):
     space = _space_id()
 
     if conversation_id:
-        msg = w.genie.create_message(space, conversation_id, content=message)
+        body = _do(w, "POST",
+            f"/api/2.0/genie/spaces/{space}/conversations/{conversation_id}/messages",
+            body={"content": message})
+        msg_id = body.get("id") or body.get("message_id")
         conv_id = conversation_id
-        # SDK 0.44 may return .id directly or nested in .message.id
-        msg_id = getattr(msg, "id", None) or getattr(getattr(msg, "message", None), "id", None)
     else:
-        resp = w.genie.start_conversation(space, content=message)
-        conv_id = resp.conversation_id
-        # SDK 0.44 returns .message_id flat; older spec had .message.id nested
-        nested = getattr(resp, "message", None)
-        msg_id = getattr(nested, "id", None) or getattr(resp, "message_id", None)
-        initial_status = getattr(nested, "status", "") if nested else ""
-        if initial_status == "COMPLETED":
-            result = _extract_results(w, space, conv_id, msg_id, nested)
+        body = _do(w, "POST",
+            f"/api/2.0/genie/spaces/{space}/start-conversation",
+            body={"content": message})
+        conv_id = body["conversation_id"]
+        msg_id = body["message"]["id"]
+        if body["message"].get("status") == "COMPLETED":
+            result = _extract_results(w, space, conv_id, msg_id, body["message"])
             result["conversation_id"] = conv_id
             return result
 
     # Poll until completed or timeout
     terminal = {"COMPLETED", "FAILED", "CANCELLED", "QUERY_RESULT_EXPIRED"}
     deadline = time.time() + timeout
-    msg_data = None
+    msg_data = {}
 
     while time.time() < deadline:
         time.sleep(1.5)
-        msg_data = w.genie.get_message(space, conv_id, msg_id)
-        if getattr(msg_data, "status", "") in terminal:
+        msg_data = _do(w, "GET",
+            f"/api/2.0/genie/spaces/{space}/conversations/{conv_id}/messages/{msg_id}")
+        if msg_data.get("status") in terminal:
             break
 
-    status = getattr(msg_data, "status", "timeout") if msg_data else "timeout"
-    if status != "COMPLETED":
-        raise RuntimeError(f"Genie status: {status}")
+    if msg_data.get("status") != "COMPLETED":
+        raise RuntimeError(f"Genie status: {msg_data.get('status', 'timeout')}")
 
     result = _extract_results(w, space, conv_id, msg_id, msg_data)
     result["conversation_id"] = conv_id
