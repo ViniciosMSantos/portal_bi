@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 
-# app/services/databricks.py → services/ → app/ → project root
+# Resolve a raiz do projeto a partir do caminho deste arquivo
 _root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 load_dotenv(os.path.join(_root, ".env"))
@@ -23,6 +23,7 @@ _pool = None
 
 
 def _wc():
+    # Retorna o WorkspaceClient do Databricks SDK (singleton)
     global _workspace_client
     if _workspace_client is None:
         _workspace_client = sdk.WorkspaceClient()
@@ -32,6 +33,9 @@ def _wc():
 class _OAuthConnection(psycopg.Connection):
     @classmethod
     def connect(cls, conninfo="", **kwargs):
+        # Obtém o token de acesso via OAuth client_credentials antes de abrir a conexão.
+        # Se DATABRICKS_TOKEN estiver definido (PAT), usa diretamente.
+        # Caso contrário, faz a requisição OIDC para obter um JWT temporário.
         import requests as _req
         pat = os.getenv("DATABRICKS_TOKEN")
         if pat:
@@ -54,6 +58,9 @@ class _OAuthConnection(psycopg.Connection):
 
 
 def get_pool():
+    # Retorna o pool de conexões (singleton). Cria na primeira chamada.
+    # check_connection verifica se a conexão ainda está viva antes de entregá-la,
+    # evitando erros de "server closed the connection unexpectedly" por timeout ocioso.
     global _pool
     if _pool is None:
         conn_string = (
@@ -69,21 +76,28 @@ def get_pool():
             connection_class=_OAuthConnection,
             min_size=int(os.getenv("PGPOOL_MIN", "2")),
             max_size=int(os.getenv("PGPOOL_MAX", "10")),
+            check=ConnectionPool.check_connection,
+            reconnect_timeout=10,
         )
     return _pool
 
 
 def get_conn():
+    # Atalho para obter uma conexão do pool como context manager
     return get_pool().connection()
 
 
 def _schema():
+    # Retorna o nome do schema isolado para este app/usuário.
+    # Ex: "portal_dashs_schema_c74cb024eaf44ad29d7338998804b714"
     app = os.getenv("PGAPPNAME", "").replace("-", "_")
     user = os.getenv("PGUSER", "").replace("-", "")
     return f"{app}_schema_{user}"
 
 
 def gen_id(prefix=""):
+    # Gera um ID único com timestamp UTC + 6 chars aleatórios.
+    # Ex: "dash_20240513143022ab12cd"
     ts = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
     suffix = uuid.uuid4().hex[:6]
     return f"{prefix}{ts}{suffix}"
@@ -92,6 +106,10 @@ def gen_id(prefix=""):
 # ── Init ───────────────────────────────────────────────────────────────────────
 
 def init_database():
+    # Cria o schema e todas as tabelas se não existirem.
+    # Também executa migrations via ALTER TABLE ADD COLUMN IF NOT EXISTS,
+    # garantindo que novas colunas sejam adicionadas em bancos já existentes.
+    # Chamado automaticamente no create_app() com try/except.
     s = _schema()
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -127,6 +145,7 @@ def init_database():
                     url TEXT NOT NULL,
                     link_type TEXT DEFAULT 'DASHBOARD',
                     description TEXT DEFAULT '',
+                    documentation TEXT DEFAULT '',
                     public_notes TEXT DEFAULT '',
                     private_notes TEXT DEFAULT '',
                     folder_id TEXT DEFAULT '',
@@ -137,6 +156,21 @@ def init_database():
                     visibility TEXT DEFAULT 'private',
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
+            """).format(sql.Identifier(s)))
+
+            # Migration: adiciona coluna documentation caso a tabela já existia sem ela
+            cur.execute(sql.SQL("""
+                ALTER TABLE {}.dashboards ADD COLUMN IF NOT EXISTS documentation TEXT DEFAULT ''
+            """).format(sql.Identifier(s)))
+
+            # Migration: adiciona coluna ia_enabled caso a tabela já existia sem ela
+            cur.execute(sql.SQL("""
+                ALTER TABLE {}.users ADD COLUMN IF NOT EXISTS ia_enabled BOOLEAN DEFAULT FALSE
+            """).format(sql.Identifier(s)))
+
+            # Migration: adiciona coluna folder_ids em tags para vincular pastas
+            cur.execute(sql.SQL("""
+                ALTER TABLE {}.tags ADD COLUMN IF NOT EXISTS folder_ids TEXT[] DEFAULT '{{}}'
             """).format(sql.Identifier(s)))
 
             cur.execute(sql.SQL("""
@@ -222,12 +256,13 @@ def init_database():
 # ── Users ──────────────────────────────────────────────────────────────────────
 
 def get_user(email):
+    # Busca um usuário pelo email. Retorna dict ou None se não encontrado.
     s = _schema()
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 sql.SQL(
-                    "SELECT email, name, role, tags, is_active, created_at FROM {}.users WHERE email = %s"
+                    "SELECT email, name, role, tags, is_active, ia_enabled, created_at FROM {}.users WHERE email = %s"
                 ).format(sql.Identifier(s)),
                 (email,),
             )
@@ -239,12 +274,15 @@ def get_user(email):
                     "role": row[2],
                     "tags": list(row[3] or []),
                     "is_active": row[4],
-                    "created_at": row[5],
+                    "ia_enabled": row[5] or False,
+                    "created_at": row[6],
                 }
     return None
 
 
 def ensure_user(email, display_name=""):
+    # Garante que o usuário existe no banco. Se não existir, cria com role USER inativo.
+    # Usado no fluxo de primeiro acesso (solicitação de acesso).
     user = get_user(email)
     if user is None:
         s = _schema()
@@ -264,22 +302,26 @@ def ensure_user(email, display_name=""):
 
 
 def get_all_users():
+    # Retorna todos os usuários ordenados por data de criação (mais recente primeiro).
     s = _schema()
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 sql.SQL(
-                    "SELECT email, name, role, tags, is_active, created_at FROM {}.users ORDER BY created_at DESC"
+                    "SELECT email, name, role, tags, is_active, ia_enabled, created_at FROM {}.users ORDER BY created_at DESC"
                 ).format(sql.Identifier(s))
             )
             cols = [d[0] for d in cur.description]
             rows = [dict(zip(cols, row)) for row in cur.fetchall()]
             for r in rows:
                 r["tags"] = list(r["tags"] or [])
+                r["ia_enabled"] = r.get("ia_enabled") or False
             return rows
 
 
 def update_user(email, **kwargs):
+    # Atualiza campos do usuário dinamicamente. Campos permitidos pela rota:
+    # role, is_active, name, tags, ia_enabled
     if not kwargs:
         return
     s = _schema()
@@ -299,6 +341,7 @@ def update_user(email, **kwargs):
 # ── Dashboards ─────────────────────────────────────────────────────────────────
 
 def get_all_dashboards():
+    # Retorna todos os dashboards ordenados por order_num e título.
     s = _schema()
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -311,7 +354,78 @@ def get_all_dashboards():
             return [dict(zip(cols, row)) for row in cur.fetchall()]
 
 
+def get_accessible_dashboards(email):
+    # Retorna dashboards acessíveis ao usuário seguindo as regras de governança:
+    # - ADMIN/MANAGER: acesso total
+    # - USER/BA via tag: dash diretos da tag + todos os dash das pastas da tag
+    # - USER/BA via acesso individual: dashboards explicitamente concedidos
+    user = get_user(email)
+    if not user:
+        return []
+    if user["role"] in ("ADMIN", "MANAGER"):
+        return get_all_dashboards()
+
+    s = _schema()
+    user_tags = user.get("tags") or []
+    tag_dash_ids = set()
+    tag_folder_ids = set()
+
+    if user_tags:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    sql.SQL(
+                        "SELECT dashboard_ids, folder_ids FROM {}.tags WHERE id = ANY(%s)"
+                    ).format(sql.Identifier(s)),
+                    (user_tags,),
+                )
+                for row in cur.fetchall():
+                    tag_dash_ids.update(row[0] or [])
+                    tag_folder_ids.update(row[1] or [])
+
+    individual_ids = set(get_individual_access(email))
+    all_dash_ids = list(tag_dash_ids | individual_ids)
+    folder_ids = list(tag_folder_ids)
+
+    if not all_dash_ids and not folder_ids:
+        return []
+
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            if all_dash_ids and folder_ids:
+                cur.execute(
+                    sql.SQL(
+                        "SELECT * FROM {}.dashboards"
+                        " WHERE id = ANY(%s) OR folder_id = ANY(%s)"
+                        " ORDER BY order_num, title"
+                    ).format(sql.Identifier(s)),
+                    (all_dash_ids, folder_ids),
+                )
+            elif folder_ids:
+                cur.execute(
+                    sql.SQL(
+                        "SELECT * FROM {}.dashboards"
+                        " WHERE folder_id = ANY(%s)"
+                        " ORDER BY order_num, title"
+                    ).format(sql.Identifier(s)),
+                    (folder_ids,),
+                )
+            else:
+                cur.execute(
+                    sql.SQL(
+                        "SELECT * FROM {}.dashboards"
+                        " WHERE id = ANY(%s)"
+                        " ORDER BY order_num, title"
+                    ).format(sql.Identifier(s)),
+                    (all_dash_ids,),
+                )
+            cols = [d[0] for d in cur.description]
+            return [dict(zip(cols, row)) for row in cur.fetchall()]
+
+
 def create_dashboard(**kwargs):
+    # Cria um dashboard com os campos fornecidos. Gera id e created_at automaticamente.
+    # Retorna o id do dashboard criado.
     s = _schema()
     kwargs.setdefault("id", gen_id("dash_"))
     kwargs.setdefault("created_at", datetime.now(timezone.utc))
@@ -332,6 +446,7 @@ def create_dashboard(**kwargs):
 
 
 def update_dashboard(dash_id, **kwargs):
+    # Atualiza campos de um dashboard específico pelo id.
     if not kwargs:
         return
     s = _schema()
@@ -349,6 +464,7 @@ def update_dashboard(dash_id, **kwargs):
 
 
 def delete_dashboard(dash_id):
+    # Remove permanentemente um dashboard pelo id.
     s = _schema()
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -362,6 +478,7 @@ def delete_dashboard(dash_id):
 # ── Tags ───────────────────────────────────────────────────────────────────────
 
 def get_all_tags():
+    # Retorna todas as tags ordenadas por nome.
     s = _schema()
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -372,10 +489,12 @@ def get_all_tags():
             rows = [dict(zip(cols, row)) for row in cur.fetchall()]
             for r in rows:
                 r["dashboard_ids"] = list(r["dashboard_ids"] or [])
+                r["folder_ids"] = list(r.get("folder_ids") or [])
             return rows
 
 
 def create_tag(name, description="", color="#1B2CC1"):
+    # Cria uma nova tag. Retorna o id gerado.
     s = _schema()
     tag_id = gen_id("tag_")
     with get_conn() as conn:
@@ -391,6 +510,7 @@ def create_tag(name, description="", color="#1B2CC1"):
 
 
 def update_tag(tag_id, **kwargs):
+    # Atualiza campos de uma tag específica pelo id.
     if not kwargs:
         return
     s = _schema()
@@ -408,6 +528,7 @@ def update_tag(tag_id, **kwargs):
 
 
 def delete_tag(tag_id):
+    # Remove uma tag pelo id.
     s = _schema()
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -421,6 +542,7 @@ def delete_tag(tag_id):
 # ── Folders ────────────────────────────────────────────────────────────────────
 
 def get_all_folders():
+    # Retorna todas as pastas ordenadas por order_num e nome.
     s = _schema()
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -433,7 +555,41 @@ def get_all_folders():
             return [dict(zip(cols, row)) for row in cur.fetchall()]
 
 
+def get_accessible_folders(email):
+    # Retorna pastas visíveis ao usuário: contém dashboard acessível ou é ancestral de pasta visível.
+    # ADMIN/MANAGER veem todas as pastas.
+    user = get_user(email)
+    if not user:
+        return []
+    if user["role"] in ("ADMIN", "MANAGER"):
+        return get_all_folders()
+
+    accessible_dashes = get_accessible_dashboards(email)
+    dash_folder_ids = {d["folder_id"] for d in accessible_dashes if d.get("folder_id")}
+
+    if not dash_folder_ids:
+        return []
+
+    all_folders = get_all_folders()
+    folder_map = {f["id"]: f for f in all_folders}
+    visible_ids = set()
+
+    def _add_with_ancestors(fid):
+        if fid in visible_ids or fid not in folder_map:
+            return
+        visible_ids.add(fid)
+        parent = folder_map[fid].get("parent_id")
+        if parent:
+            _add_with_ancestors(parent)
+
+    for fid in dash_folder_ids:
+        _add_with_ancestors(fid)
+
+    return [f for f in all_folders if f["id"] in visible_ids]
+
+
 def create_folder(name, description="", parent_id=""):
+    # Cria uma pasta. parent_id vazio indica pasta raiz. Retorna o id criado.
     s = _schema()
     folder_id = gen_id("folder_")
     with get_conn() as conn:
@@ -449,6 +605,7 @@ def create_folder(name, description="", parent_id=""):
 
 
 def update_folder(folder_id, **kwargs):
+    # Atualiza campos de uma pasta específica pelo id.
     if not kwargs:
         return
     s = _schema()
@@ -466,6 +623,8 @@ def update_folder(folder_id, **kwargs):
 
 
 def _collect_child_ids(folder_id, all_folders):
+    # Coleta recursivamente os ids de todas as subpastas de folder_id.
+    # Usado por delete_folder para garantir que a árvore inteira seja removida.
     children = [f["id"] for f in all_folders if f.get("parent_id") == folder_id]
     result = list(children)
     for child_id in children:
@@ -474,6 +633,7 @@ def _collect_child_ids(folder_id, all_folders):
 
 
 def delete_folder(folder_id):
+    # Remove a pasta e todas as suas subpastas recursivamente.
     s = _schema()
     all_folders = get_all_folders()
     ids_to_delete = [folder_id] + _collect_child_ids(folder_id, all_folders)
@@ -489,6 +649,8 @@ def delete_folder(folder_id):
 # ── Access Requests ────────────────────────────────────────────────────────────
 
 def create_access_request(email, name, message=""):
+    # Registra uma nova solicitação de acesso com status PENDING.
+    # Retorna o id da solicitação criada.
     s = _schema()
     req_id = gen_id("req_")
     with get_conn() as conn:
@@ -505,6 +667,7 @@ def create_access_request(email, name, message=""):
 
 
 def get_pending_requests():
+    # Retorna todas as solicitações com status PENDING, ordenadas por data de criação.
     s = _schema()
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -518,6 +681,7 @@ def get_pending_requests():
 
 
 def get_all_requests():
+    # Retorna todas as solicitações (qualquer status), mais recentes primeiro.
     s = _schema()
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -531,6 +695,7 @@ def get_all_requests():
 
 
 def has_pending_request(email):
+    # Verifica se o email tem alguma solicitação PENDING em aberto. Retorna bool.
     s = _schema()
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -544,6 +709,7 @@ def has_pending_request(email):
 
 
 def approve_request(req_id, reviewer_email, tags):
+    # Aprova uma solicitação: marca como APPROVED, ativa o usuário e atribui as tags.
     s = _schema()
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -574,6 +740,7 @@ def approve_request(req_id, reviewer_email, tags):
 
 
 def reject_request(req_id, reviewer_email, review_note=""):
+    # Rejeita uma solicitação, registrando o revisor e a nota de rejeição.
     s = _schema()
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -590,6 +757,7 @@ def reject_request(req_id, reviewer_email, review_note=""):
 # ── Favorites ──────────────────────────────────────────────────────────────────
 
 def get_favorites(email):
+    # Retorna lista de dashboard_ids favoritados pelo usuário.
     s = _schema()
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -603,6 +771,7 @@ def get_favorites(email):
 
 
 def toggle_favorite(email, dashboard_id):
+    # Adiciona ou remove o dashboard dos favoritos do usuário (toggle).
     s = _schema()
     favs = get_favorites(email)
     with get_conn() as conn:
@@ -628,6 +797,7 @@ def toggle_favorite(email, dashboard_id):
 # ── Individual Access ──────────────────────────────────────────────────────────
 
 def get_individual_access(email):
+    # Retorna lista de dashboard_ids com acesso individual concedido ao usuário.
     s = _schema()
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -641,6 +811,8 @@ def get_individual_access(email):
 
 
 def grant_individual_access(user_email, dashboard_id, granted_by):
+    # Concede acesso individual a um dashboard para o usuário.
+    # ON CONFLICT DO NOTHING evita erro se o acesso já existir.
     s = _schema()
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -655,6 +827,7 @@ def grant_individual_access(user_email, dashboard_id, granted_by):
 
 
 def revoke_individual_access(user_email, dashboard_id):
+    # Remove o acesso individual de um usuário a um dashboard específico.
     s = _schema()
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -668,6 +841,8 @@ def revoke_individual_access(user_email, dashboard_id):
 
 
 def sync_individual_access(user_email, dashboard_ids, granted_by):
+    # Sincroniza o acesso individual: concede os que faltam e revoga os que sobraram.
+    # Útil para atualizar em bloco a lista de acessos de um usuário.
     current = set(get_individual_access(user_email))
     desired = set(dashboard_ids)
     for d in desired - current:
@@ -679,6 +854,7 @@ def sync_individual_access(user_email, dashboard_ids, granted_by):
 # ── Notifications ──────────────────────────────────────────────────────────────
 
 def get_notifications(email):
+    # Retorna as 20 notificações mais recentes do usuário.
     s = _schema()
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -695,6 +871,7 @@ def get_notifications(email):
 
 
 def count_unread_notifications(email):
+    # Retorna o número de notificações não lidas do usuário.
     s = _schema()
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -708,6 +885,7 @@ def count_unread_notifications(email):
 
 
 def mark_notification_read(notif_id):
+    # Marca uma notificação específica como lida.
     s = _schema()
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -721,6 +899,7 @@ def mark_notification_read(notif_id):
 
 
 def create_notification(user_email, title, message, notif_type="INFO"):
+    # Cria uma notificação para o usuário. Tipos: INFO, WARNING, ERROR, SUCCESS.
     s = _schema()
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -737,6 +916,10 @@ def create_notification(user_email, title, message, notif_type="INFO"):
 # ── Audit Log ──────────────────────────────────────────────────────────────────
 
 def log_audit(user_email, action, entity="", entity_id="", details=None):
+    # Registra uma ação no log de auditoria.
+    # action: verbo da ação (ex: "CREATE_DASHBOARD", "APPROVE_REQUEST")
+    # entity: tipo de entidade afetada (ex: "dashboard", "user")
+    # details: dict com informações extras (serializado como JSONB)
     import json
     s = _schema()
     with get_conn() as conn:
@@ -759,6 +942,7 @@ def log_audit(user_email, action, entity="", entity_id="", details=None):
 
 
 def get_audit_log(limit=100):
+    # Retorna os registros de auditoria mais recentes. Padrão: últimos 100.
     s = _schema()
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -776,6 +960,7 @@ def get_audit_log(limit=100):
 # ── Settings ───────────────────────────────────────────────────────────────────
 
 def get_settings():
+    # Retorna todas as configurações do sistema como dict {key: value}.
     s = _schema()
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -786,6 +971,7 @@ def get_settings():
 
 
 def set_setting(key, value):
+    # Cria ou atualiza uma configuração pelo key (upsert).
     s = _schema()
     with get_conn() as conn:
         with conn.cursor() as cur:

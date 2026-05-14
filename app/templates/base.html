@@ -17,6 +17,15 @@
             <img id="sidebar-logo-img" src="{{ url_for('static', filename='img/Logo Branco BHub [10.25].png') }}"
                 alt="BHub" />
         </div>
+        <div id="sidebar-search">
+            <svg id="sidebar-search-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.4)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+            <input id="sidebar-search-input" type="text" placeholder="{% if current_user.ia_enabled %}Buscar ou pergunte à IA...{% else %}Buscar dashboard...{% endif %}" autocomplete="off" />
+            {% if current_user.ia_enabled %}
+            <button id="sidebar-search-ai-btn" title="Perguntar à IA (Enter)">✦</button>
+            {% endif %}
+        </div>
         <nav id="sidebar-nav">
             <a id="nav-home" href="{{ url_for('main.home') }}" onclick="goHome(event)" class="nav-active">
                 <img class="nav-icon" src="{{ url_for('static', filename='icons/icons8-casa-50.png') }}" alt="" />
@@ -28,7 +37,7 @@
         <div id="sidebar-admin">
             <span id="sidebar-admin-label">Administrador</span>
             <a id="nav-config" href="{{ url_for('main.dashboard') }}" onclick="goConfig(event)">
-                <img class="nav-icon" src="{{ url_for('static', filename='icons/icons8-abrir-pasta-50.png') }}"
+                <img class="nav-icon" src="{{ url_for('static', filename='icons/icons8-configurações-50.png') }}"
                     alt="" />
                 Painel de Configuração
             </a>
@@ -50,6 +59,10 @@
     <script>
         window._folderIcon = "{{ url_for('static', filename='icons/icons8-abrir-pasta-50.png') }}";
         window._folderIconDark = "{{ url_for('static', filename='icons/icons8-abrir-pasta-50 laranja.png') }}";
+        window._folderIconBlack = "{{ url_for('static', filename='icons/icons8-abrir-pasta-50 preto.png') }}";
+        window._usersIcon = "{{ url_for('static', filename='icons/icons8-chamada-em-conferência-48.png') }}";
+        window._requestsIcon = "{{ url_for('static', filename='icons/icons8-sino-24.png') }}";
+        window._tagsIcon = "{{ url_for('static', filename='icons/icons8-etiqueta-de-preço-48 (1).png') }}";
     </script>
     <script src="{{ url_for('static', filename='js/sidebar.js') }}"></script>
     <script src="{{ url_for('static', filename='js/config.js') }}"></script>
