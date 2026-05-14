@@ -19,39 +19,21 @@ def _host():
 
 
 def _space_id():
-    global _SPACE_ID_CACHE, _WC
+    global _SPACE_ID_CACHE
     if _SPACE_ID_CACHE:
         return _SPACE_ID_CACHE
 
-    # 1. Env vars — injected by Databricks Apps or set manually
+    # GENIE_SPACE_SPACE_ID — injected by Databricks Apps from the 'genie-space' resource in app.yml
+    # GENIE_ESPACE_ID      — fallback for local dev (.env)
     sid = (
-        os.getenv("GENIE_SPACE_ID", "").strip()
-        or os.getenv("GENIE_SPACE_SPACE_ID", "").strip()
+        os.getenv("GENIE_SPACE_SPACE_ID", "").strip()
         or os.getenv("GENIE_ESPACE_ID", "").strip()
     )
-
-    # 2. Query Databricks Apps API — reads the 'genie-space' resource configured in the app
-    if not sid:
-        try:
-            if _WC is None:
-                _WC = _sdk.WorkspaceClient()
-            app_name = os.getenv("DATABRICKS_APP_NAME", "").strip()
-            if app_name:
-                app = _WC.apps.get(app_name)
-                for resource in (app.resources or []):
-                    if getattr(resource, "name", "") == "genie-space":
-                        gs = getattr(resource, "genie_space", None)
-                        if gs:
-                            sid = getattr(gs, "id", "").strip()
-                            break
-        except Exception:
-            pass
 
     if not sid:
         raise RuntimeError(
             "Genie Space ID not found. "
-            "Checked: GENIE_SPACE_ID, GENIE_SPACE_SPACE_ID, GENIE_ESPACE_ID, Databricks Apps API. "
-            "For local dev, set GENIE_ESPACE_ID in .env."
+            "Declare the 'genie-space' resource in app.yml or set GENIE_ESPACE_ID in .env."
         )
 
     _SPACE_ID_CACHE = sid

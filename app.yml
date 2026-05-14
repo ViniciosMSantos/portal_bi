@@ -1,1 +1,6 @@
 command: ["gunicorn", "-b", "0.0.0.0:$DATABRICKS_APP_PORT", "run:app"]
+
+resources:
+  - name: genie-space
+    genie_space:
+      id: "01f14e46b80d1101a3d8bca2bfaa81f1"
