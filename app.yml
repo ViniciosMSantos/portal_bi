@@ -1,4 +1,4 @@
-command: ["gunicorn", "-b", "0.0.0.0:$DATABRICKS_APP_PORT", "--timeout", "120", "--graceful-timeout", "120", "run:app"]
+command: ["gunicorn", "-b", "0.0.0.0:$DATABRICKS_APP_PORT", "--timeout", "300", "--graceful-timeout", "300", "run:app"]
 
 resources:
   - name: genie-space

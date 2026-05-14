@@ -132,7 +132,7 @@ def _extract_results(w, space, conv_id, msg_id, msg_data):
     }
 
 
-def query(message, conversation_id=None, timeout=90):
+def query(message, conversation_id=None, timeout=270):
     w = _get_client()
     space = _space_id()
 
@@ -162,7 +162,7 @@ def query(message, conversation_id=None, timeout=90):
     msg_data = {}
 
     while time.time() < deadline:
-        time.sleep(1.5)
+        time.sleep(3)
         msg_data = _do(w, "GET",
             f"/api/2.0/genie/spaces/{space}/conversations/{conv_id}/messages/{msg_id}")
         if msg_data.get("status") in terminal:
