@@ -23,17 +23,20 @@ def _space_id():
     if _SPACE_ID_CACHE:
         return _SPACE_ID_CACHE
 
-    # GENIE_SPACE_SPACE_ID — injected by Databricks Apps from the 'genie-space' resource in app.yml
-    # GENIE_ESPACE_ID      — fallback for local dev (.env)
+    # Try all known naming variants injected by Databricks Apps
     sid = (
         os.getenv("GENIE_SPACE_SPACE_ID", "").strip()
+        or os.getenv("GENIE_SPACE_ID", "").strip()
         or os.getenv("GENIE_ESPACE_ID", "").strip()
     )
 
     if not sid:
+        # Log available env vars to help diagnose the correct variable name
+        genie_vars = {k: v for k, v in os.environ.items() if "GENIE" in k or "SPACE" in k}
         raise RuntimeError(
-            "Genie Space ID not found. "
-            "Declare the 'genie-space' resource in app.yml or set GENIE_ESPACE_ID in .env."
+            f"Genie Space ID not found. "
+            f"Env vars with GENIE/SPACE: {genie_vars or 'none found'}. "
+            f"Declare the 'genie-space' resource in app.yml or set GENIE_ESPACE_ID in .env."
         )
 
     _SPACE_ID_CACHE = sid
