@@ -54,11 +54,15 @@ def _space_id():
 
 
 def _do(w, method, path, body=None):
-    """Call Databricks API with SDK auth. Captures redirect/HTML for clear diagnostics."""
+    """Call Databricks API with SDK auth. GET requests omit Content-Type."""
     host = w.config.host.rstrip("/")
     url = f"{host}{path}"
     auth_headers = w.config.authenticate()
-    headers = {**auth_headers, "Content-Type": "application/json"}
+
+    if method.upper() == "GET":
+        headers = {**auth_headers}
+    else:
+        headers = {**auth_headers, "Content-Type": "application/json"}
 
     resp = _requests.request(
         method, url, json=body, headers=headers,
@@ -67,14 +71,16 @@ def _do(w, method, path, body=None):
 
     if resp.is_redirect:
         raise RuntimeError(
-            f"Genie API redirect {resp.status_code} → {resp.headers.get('Location', '?')}"
+            f"Genie redirect {resp.status_code} → {resp.headers.get('Location', '?')} | url={url}"
         )
     if not resp.ok:
-        raise RuntimeError(f"Genie API HTTP {resp.status_code}: {resp.text[:400]}")
-    if resp.text.strip().startswith("<"):
+        raise RuntimeError(f"Genie HTTP {resp.status_code} | url={url} | {resp.text[:300]}")
+
+    text = resp.text.strip().lstrip('﻿')
+    if text.startswith("<"):
         ct = resp.headers.get("Content-Type", "")
         raise RuntimeError(
-            f"Genie returned HTML (HTTP {resp.status_code}, {ct}): {resp.text[:400]}"
+            f"Genie HTML {resp.status_code} ({ct}) | url={url} | {text[:300]}"
         )
     return resp.json()
 
@@ -140,10 +146,13 @@ def query(message, conversation_id=None, timeout=90):
         body = _do(w, "POST",
             f"/api/2.0/genie/spaces/{space}/start-conversation",
             body={"content": message})
-        conv_id = body["conversation_id"]
-        msg_id = body["message"]["id"]
-        if body["message"].get("status") == "COMPLETED":
-            result = _extract_results(w, space, conv_id, msg_id, body["message"])
+        conv_id = body.get("conversation_id") or (body.get("conversation") or {}).get("id", "")
+        nested_msg = body.get("message") or {}
+        msg_id = nested_msg.get("id") or body.get("message_id")
+        if not msg_id:
+            raise RuntimeError(f"Genie: no message_id in start-conversation response. Keys: {list(body.keys())}")
+        if nested_msg.get("status") == "COMPLETED":
+            result = _extract_results(w, space, conv_id, msg_id, nested_msg)
             result["conversation_id"] = conv_id
             return result
 
