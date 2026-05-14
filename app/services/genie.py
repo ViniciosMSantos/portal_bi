@@ -5,6 +5,7 @@ from databricks import sdk as _sdk
 
 _HOST = None
 _WC = None
+_SPACE_ID_CACHE = None
 
 
 def _host():
@@ -18,20 +19,42 @@ def _host():
 
 
 def _space_id():
-    # Tries env vars in priority order:
-    # 1. GENIE_SPACE_SPACE_ID  — injected by Databricks Apps when the resource key is "genie-space"
-    # 2. GENIE_ESPACE_ID       — set manually (local dev or App Environment tab)
+    global _SPACE_ID_CACHE, _WC
+    if _SPACE_ID_CACHE:
+        return _SPACE_ID_CACHE
+
+    # 1. Env vars — injected by Databricks Apps or set manually
     sid = (
-        os.getenv("GENIE_SPACE_SPACE_ID", "").strip()
+        os.getenv("GENIE_SPACE_ID", "").strip()
+        or os.getenv("GENIE_SPACE_SPACE_ID", "").strip()
         or os.getenv("GENIE_ESPACE_ID", "").strip()
     )
+
+    # 2. Query Databricks Apps API — reads the 'genie-space' resource configured in the app
+    if not sid:
+        try:
+            if _WC is None:
+                _WC = _sdk.WorkspaceClient()
+            app_name = os.getenv("DATABRICKS_APP_NAME", "").strip()
+            if app_name:
+                app = _WC.apps.get(app_name)
+                for resource in (app.resources or []):
+                    if getattr(resource, "name", "") == "genie-space":
+                        gs = getattr(resource, "genie_space", None)
+                        if gs:
+                            sid = getattr(gs, "id", "").strip()
+                            break
+        except Exception:
+            pass
+
     if not sid:
         raise RuntimeError(
             "Genie Space ID not found. "
-            "In the Databricks App, add the 'genie-space' resource under 'App Resources' "
-            "(this automatically injects GENIE_SPACE_SPACE_ID). "
+            "Checked: GENIE_SPACE_ID, GENIE_SPACE_SPACE_ID, GENIE_ESPACE_ID, Databricks Apps API. "
             "For local dev, set GENIE_ESPACE_ID in .env."
         )
+
+    _SPACE_ID_CACHE = sid
     return sid
 
 
