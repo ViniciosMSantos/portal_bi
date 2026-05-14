@@ -41,9 +41,8 @@ def _get_token():
     global _WC
     if _WC is None:
         _WC = _sdk.WorkspaceClient()
-    headers = {}
-    _WC.config.authenticate(headers)
-    auth = headers.get("Authorization", "")
+    auth_headers = _WC.config.authenticate()
+    auth = auth_headers.get("Authorization", "")
     if auth.startswith("Bearer "):
         return auth[7:]
     raise RuntimeError("Could not obtain token via Databricks SDK")
