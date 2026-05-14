@@ -6,11 +6,19 @@ Portal corporativo para centralizar e controlar o acesso a dashboards, links e f
 
 - Navegação SPA por pastas e subpastas (sem reload de página)
 - Cards de dashboard com link direto, tipo e descrição
+- **Campo de busca** na sidebar: filtro local em tempo real por nome/descrição
+- **Chat de IA** integrado ao Databricks Genie:
+  - Perguntas em linguagem natural sobre os dados dos dashboards
+  - Memória de conversa (contexto mantido entre perguntas)
+  - Acessível via botão ✦ na sidebar e FAB na tela principal
+  - Habilitado por usuário — admin controla quem tem acesso
+- Documentação por dashboard: campo para armazenar README.md/CLAUDE.md como fonte de dados para o LLM
 - Solicitação de acesso para usuários novos (fluxo de aprovação)
-- Painel de configuração para administradores:
+- Painel de configuração para administradores (ADMIN/MANAGER):
   - Aprovar ou rejeitar solicitações de acesso pendentes
   - Ativar/desativar usuários
   - Alterar perfil de usuário (USER / BA / MANAGER / ADMIN)
+  - Habilitar/desabilitar acesso à IA por usuário
 - Favicon adaptativo ao tema do sistema (claro/escuro)
 - Controle de acesso por role: FABs e painel admin visíveis apenas para ADMIN/MANAGER
 
@@ -23,6 +31,7 @@ Portal corporativo para centralizar e controlar o acesso a dashboards, links e f
 | Banco de dados | Databricks Lakebase (PostgreSQL) |
 | Auth do banco | OAuth2 client_credentials → JWT |
 | Auth do usuário | Header `X-Forwarded-Email` (Databricks Apps) |
+| IA | Databricks Genie Conversation API |
 | Frontend | HTML + CSS + JS vanilla (Jinja2) |
 | Fonte | Inter (Google Fonts) |
 | Deploy | Databricks Apps (gunicorn) |
@@ -56,6 +65,7 @@ PGDATABASE=nome-do-banco
 PGUSER=nome-do-usuario
 PGSSLMODE=require
 PGAPPNAME=bhub_portal
+GENIE_ESPACE_ID=id-do-espaco-genie
 ```
 
 > Com a VS Code Databricks Extension ativa, `DATABRICKS_CLIENT_SECRET` pode ser omitido — a extensão usa `metadata-service` automaticamente.
@@ -75,7 +85,8 @@ app/
 ├── __init__.py          # Factory create_app(), context_processor current_user
 ├── routes.py            # Todas as rotas Flask (Blueprint "main")
 ├── services/
-│   └── databricks.py   # CRUD completo via psycopg + OAuth pool
+│   ├── databricks.py   # CRUD completo via psycopg + OAuth pool
+│   └── genie.py        # Integração com Databricks Genie API
 ├── static/
 │   ├── css/
 │   │   ├── styles.css  # Design system BHub
@@ -83,7 +94,7 @@ app/
 │   ├── icons/          # Ícones PNG
 │   ├── img/            # Logos BHub
 │   └── js/
-│       ├── sidebar.js  # Navegação SPA + árvore de pastas
+│       ├── sidebar.js  # Navegação SPA, busca, chat Genie
 │       ├── folders.js  # Modal Nova Pasta
 │       ├── dashboards.js # Modal Novo Dashboard
 │       └── config.js   # Painel de configuração
@@ -106,6 +117,46 @@ app.yml                  # Databricks Apps (gunicorn)
 | MANAGER | Acesso total + painel admin |
 | ADMIN | Acesso total + painel admin |
 
+> ADMIN e MANAGER sempre têm acesso à IA. USER e BA só têm acesso se `ia_enabled = true` for configurado pelo admin.
+
+## Governança de acesso
+
+O acesso de usuários com role **USER** e **BA** segue as seguintes regras, avaliadas em conjunto:
+
+### Via Tag
+
+Cada tag pode ter dashboards e/ou pastas vinculados:
+
+- **Tag com dashboard vinculado** → usuário vê apenas aquele dashboard
+- **Tag com pasta vinculada** → usuário vê **todos os dashboards dentro daquela pasta** (dinâmico — inclui dashboards futuros adicionados à pasta)
+- Tag pode combinar pastas e dashboards vinculados simultaneamente
+
+### Via Acesso Individual (concedido pelo admin no modal "Acesso")
+
+- **Acesso a pasta** → usuário vê todos os dashboards da pasta (resolvido no momento da concessão; dashboards futuros exigem nova concessão)
+- **Acesso a dashboard específico** → usuário vê apenas aquele dashboard
+
+### Regra geral
+
+```
+Dashboard visível = (está em tag do usuário via dashboard_ids)
+                  OU (está em pasta vinculada à tag do usuário via folder_ids)
+                  OU (tem acesso individual concedido em user_dashboard_access)
+
+Pasta visível   = contém ao menos um dashboard visível ao usuário
+                  OU é ancestral de pasta visível
+```
+
+ADMIN e MANAGER ignoram todas as regras acima e veem tudo.
+
+## Genie — Chat de IA
+
+O chat usa o **Databricks Genie Conversation API**. Configure um Genie Space no workspace com as tabelas relevantes (dashboards, dados de negócio) e informe o `GENIE_ESPACE_ID` no `.env`.
+
+- Perguntas em linguagem natural → Genie executa SQL internamente → retorna resposta em texto
+- Memória de conversa: cada sessão mantém o `conversation_id` para perguntas de acompanhamento
+- "Nova conversa" reseta o contexto
+
 ## Deploy no Databricks Apps
 
 O arquivo `app.yml` já está configurado:
@@ -114,4 +165,4 @@ O arquivo `app.yml` já está configurado:
 command: ["gunicorn", "-b", "0.0.0.0:$DATABRICKS_APP_PORT", "run:app"]
 ```
 
-Configure as variáveis de ambiente (`PGHOST`, `PGUSER`, etc.) diretamente no painel do Databricks App antes de publicar.
+Configure as variáveis de ambiente (`PGHOST`, `PGUSER`, `GENIE_ESPACE_ID`, etc.) diretamente no painel do Databricks App antes de publicar.

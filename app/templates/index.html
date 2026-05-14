@@ -6,18 +6,28 @@
     <div id="folder-content-area"></div>
 </div>
 
-{% if current_user.is_admin %}
 <div id="fab-group">
-    <button id="fab-create-dashboard" onclick="openDashboardModal()">
-        <img class="fab-icon" src="{{ url_for('static', filename='icons/icons8-soma-50.png') }}" alt="" />
-        Novo Dashboard
-    </button>
-    <button id="fab-create-folder" onclick="openFolderModal()">
-        <img class="fab-icon" src="{{ url_for('static', filename='icons/icons8-soma-50.png') }}" alt="" />
-        Nova Pasta
-    </button>
+    {% if current_user.ia_enabled %}
+    <button id="fab-genie" onclick="openGenieChat()" title="Perguntar à IA">✦</button>
+    {% endif %}
+    {% if current_user.is_admin %}
+    <div id="fab-actions">
+        <div id="fab-actions-menu">
+            <button id="fab-create-folder" onclick="openFolderModal()">
+                <img class="fab-icon" src="{{ url_for('static', filename='icons/icons8-soma-50.png') }}" alt="" />
+                Nova Pasta
+            </button>
+            <button id="fab-create-dashboard" onclick="openDashboardModal()">
+                <img class="fab-icon" src="{{ url_for('static', filename='icons/icons8-soma-50.png') }}" alt="" />
+                Novo Dashboard
+            </button>
+        </div>
+        <button id="fab-actions-trigger" title="Criar">+</button>
+    </div>
+    {% endif %}
 </div>
 
+{% if current_user.is_admin %}
 <div id="dashboard-modal-overlay" onclick="closeDashboardModal()"></div>
 
 <div id="dashboard-modal">
@@ -55,6 +65,20 @@
         <div id="dashboard-field-desc" class="folder-field">
             <label for="dashboard-input-desc">Descrição <span id="dashboard-label-optional">(opcional)</span></label>
             <input id="dashboard-input-desc" type="text" name="description" placeholder="Descrição do dashboard" />
+        </div>
+        <div id="dashboard-field-doc" class="folder-field">
+            <label for="dashboard-input-doc">
+                Documentação <span id="dashboard-label-optional">(README.md / CLAUDE.md)</span>
+            </label>
+            <div id="dashboard-doc-upload-row">
+                <label id="dashboard-doc-upload-btn" for="dashboard-input-doc-file">
+                    Carregar arquivo .md
+                </label>
+                <input id="dashboard-input-doc-file" type="file" accept=".md,.txt" />
+                <span id="dashboard-doc-filename">Nenhum arquivo</span>
+            </div>
+            <textarea id="dashboard-input-doc" name="documentation" rows="5"
+                placeholder="Cole ou carregue o conteúdo do README.md / CLAUDE.md do dashboard..."></textarea>
         </div>
         <div id="dashboard-modal-actions">
             <button id="dashboard-btn-cancel" type="button" onclick="closeDashboardModal()">Cancelar</button>
