@@ -28,5 +28,5 @@ jobs:
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
         run: |
           USER=$(databricks current-user me | python3 -c "import sys,json; print(json.load(sys.stdin)['userName'])")
-          databricks apps deploy portal-dashs \
-            --source-code-path "/Workspace/Users/${USER}/.bundle/portal_dash/prod/files"
+          databricks apps deploy portal-bi \
+            --source-code-path "/Workspace/Users/${USER}/.bundle/portal_bi/prod/files"
