@@ -1,4 +1,4 @@
-# Portal de Dashboards — BHub
+# Portal de Dashboards
 
 Portal corporativo para centralizar e controlar o acesso a dashboards, links e ferramentas internas. Roda como **Databricks App** com backend Flask e banco **Lakebase** (PostgreSQL gerenciado pelo Databricks).
 
@@ -55,7 +55,7 @@ pip install -r requirements.txt
 Crie um arquivo `.env` na raiz do projeto:
 
 ```env
-DEV_USER_EMAIL=seu.email@bhub.ai
+DEV_USER_EMAIL=seu.email@exemplo.com
 DATABRICKS_HOST=https://seu-workspace.azuredatabricks.net
 DATABRICKS_CLIENT_ID=seu-client-id
 DATABRICKS_CLIENT_SECRET=seu-client-secret
@@ -64,7 +64,7 @@ PGPORT=5432
 PGDATABASE=nome-do-banco
 PGUSER=nome-do-usuario
 PGSSLMODE=require
-PGAPPNAME=bhub_portal
+PGAPPNAME=portal_dashboards
 GENIE_ESPACE_ID=id-do-espaco-genie
 ```
 
@@ -89,10 +89,10 @@ app/
 │   └── genie.py        # Integração com Databricks Genie API
 ├── static/
 │   ├── css/
-│   │   ├── styles.css  # Design system BHub
+│   │   ├── styles.css  # Design system
 │   │   └── request.css # Páginas de solicitação/pendente
 │   ├── icons/          # Ícones PNG
-│   ├── img/            # Logos BHub
+│   ├── img/            # Logos
 │   └── js/
 │       ├── sidebar.js  # Navegação SPA, busca, chat Genie
 │       ├── folders.js  # Modal Nova Pasta

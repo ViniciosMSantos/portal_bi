@@ -4,7 +4,7 @@ from flask import Flask, request, jsonify
 def create_app():
     # Factory principal do Flask. Registra blueprint, roda migrations e define context_processor e error handlers.
     app = Flask(__name__)
-    app.secret_key = os.getenv("SECRET_KEY", "dev-secret-bhub-change-in-prod")
+    app.secret_key = os.getenv("SECRET_KEY", "dev-secret-portal-change-in-prod")
 
     from .routes import main
     app.register_blueprint(main)
@@ -29,7 +29,7 @@ def create_app():
         from app.services.databricks import get_user
         email = (
             request.headers.get("X-Forwarded-Email")
-            or os.getenv("DEV_USER_EMAIL", "usuario@bhub.ai")
+            or os.getenv("DEV_USER_EMAIL", "usuario@portaldashboards.com")
         )
         parts = email.split("@")[0].replace(".", " ").replace("_", " ").split()
         initials = (parts[0][0] + parts[-1][0]).upper() if len(parts) > 1 else parts[0][:2].upper()

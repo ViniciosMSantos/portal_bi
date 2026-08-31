@@ -16,7 +16,7 @@ def _email():
     # Lê o email do usuário logado do header injetado pelo Databricks Apps ou da env DEV_USER_EMAIL em dev.
     return (
         request.headers.get("X-Forwarded-Email")
-        or os.getenv("DEV_USER_EMAIL", "usuario@bhub.ai")
+        or os.getenv("DEV_USER_EMAIL", "usuario@portaldashboards.com")
     )
 
 

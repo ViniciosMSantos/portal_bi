@@ -37,7 +37,7 @@ Portal corporativo de dashboards com controle de acesso por tags e painel admini
 | Auth do usuário | Databricks Apps injeta `X-Forwarded-Email` no header |
 | IA | Databricks Genie Conversation API (`app/services/genie.py`) |
 | Frontend | HTML + CSS + JS vanilla (Jinja2 templates) |
-| Design System | Padrão BHub |
+| Design System | Padrão próprio do Portal de Dashboards |
 | Deploy | Databricks Apps via `app.yml` (gunicorn) |
 | Dev local | `python run.py` (Flask debug server) |
 
@@ -54,10 +54,10 @@ Portal corporativo de dashboards com controle de acesso por tags e painel admini
 │   │   └── genie.py             # Integração Genie API: query(message, conversation_id)
 │   ├── static/
 │   │   ├── css/
-│   │   │   ├── styles.css       # Design system BHub (sidebar, cards, modais, config panel, genie chat)
+│   │   │   ├── styles.css       # Design system (sidebar, cards, modais, config panel, genie chat)
 │   │   │   └── request.css      # Estilos das páginas de solicitação/pendente
 │   │   ├── icons/               # Ícones PNG (pasta, casa, soma, ampulheta)
-│   │   ├── img/                 # Logos BHub (branco e preto, com e sem fundo)
+│   │   ├── img/                 # Logos (branco e preto, com e sem fundo)
 │   │   └── js/
 │   │       ├── sidebar.js       # Árvore de pastas, busca, goHome(), goConfig(), loadFolderContent(), chat Genie
 │   │       ├── folders.js       # Modal Nova Pasta: openFolderModal(), submitFolder()
@@ -344,7 +344,7 @@ Fluxo interno:
 | GET | `/api/notifications` | Lista notificações |
 | GET | `/api/audit` | Audit log (ADMIN) |
 
-## Design System BHub
+## Design System
 
 ### Cores
 

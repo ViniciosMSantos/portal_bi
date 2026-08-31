@@ -1,5 +1,5 @@
 bundle:
-  name: portal_dash
+  name: portal_bi
 
 targets:
   prod:
@@ -8,6 +8,6 @@ targets:
 resources:
   apps:
     portal_dashs:
-      name: "portal-dashs"
+      name: "portal-bi"
       description: "Portal de Dashboards"
       source_code_path: .
