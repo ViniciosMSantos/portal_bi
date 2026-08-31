@@ -1,6 +1,6 @@
 # Chatbot IA com Databricks — Guia Técnico
 
-**Portal de Dashboards BHub** | Pesquisa realizada em 2026-05-12
+**Portal de Dashboards** | Pesquisa realizada em 2026-05-12
 
 ---
 
@@ -451,7 +451,7 @@ def chat_recommend(question: str, dashboards: list) -> str:
             {
                 "role": "system",
                 "content": (
-                    "Você é um assistente do Portal de Dashboards BHub. "
+                    "Você é um assistente do Portal de Dashboards. "
                     "Analise a pergunta do usuário e recomende os dashboards mais relevantes "
                     "da lista abaixo. Inclua o link de cada recomendado. "
                     "Responda em português de forma clara e direta.\n\n"
